@@ -1,92 +1,68 @@
-cmake_minimum_required(VERSION 2.8.8)
+cmake_minimum_required(VERSION 3.10)
 project(arc_unpacker)
+
+# 使用 C++14
 set(CMAKE_CXX_STANDARD 14)
-set(CMAKE_CXX_STANDARD_REQUIRED on)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# 设置 CMake 模块路径
 set(CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/src/cmake")
 
-# -------
-# Version
-# -------
+# ------- Version -------
 execute_process(COMMAND git describe --tags OUTPUT_VARIABLE VERSION_SHORT OUTPUT_STRIP_TRAILING_WHITESPACE)
 execute_process(COMMAND git describe --always --dirty --long --tags OUTPUT_VARIABLE VERSION_LONG OUTPUT_STRIP_TRAILING_WHITESPACE)
 if("${VERSION_SHORT}" STREQUAL "")
     set(VERSION_SHORT "0.0")
     set(VERSION_LONG "?")
 endif()
-MESSAGE("Version: ${VERSION_SHORT}")
-MESSAGE("Version long: ${VERSION_LONG}")
+message("Version: ${VERSION_SHORT}")
+message("Version long: ${VERSION_LONG}")
 
 # ------------
 # Dependencies
 # ------------
-find_package(Boost COMPONENTS filesystem system REQUIRED)
-include_directories(${Boost_INCLUDE_DIR})
-link_directories(${Boost_LIBRARY_DIRS})
-
+cmake_policy(SET CMP0167 NEW)
+find_package(Boost REQUIRED COMPONENTS filesystem system)
 find_package(ZLIB REQUIRED)
-include_directories(${ZLIB_INCLUDE_DIR})
-link_directories(${ZLIB_LIBRARY_DIRS})
-
 find_package(BZip2 REQUIRED)
-include_directories(${BZIP2_INCLUDE_DIR})
-link_directories(${BZIP2_LIBRARY_DIR})
-
 find_package(PNG REQUIRED)
-include_directories(${PNG_INCLUDE_DIR})
-link_directories(${PNG_LIBRARY_DIRS})
-
 find_package(JPEG REQUIRED)
-include_directories(${JPEG_INCLUDE_DIR})
-link_directories(${JPEG_LIBRARY_DIRS})
-
 find_package(OpenSSL REQUIRED)
-include_directories(${OPENSSL_INCLUDE_DIR})
-link_directories(${OPENSSL_LIBRARY_DIRS})
+find_package(WebP REQUIRED)
 
-find_package(WebP)
-include_directories(${WEBP_INCLUDE_DIR})
-link_directories(${WEBP_LIBRARY_DIRS})
+# 设置 include 目录
+include_directories(
+    ${Boost_INCLUDE_DIRS}
+    ${ZLIB_INCLUDE_DIRS}
+    ${BZIP2_INCLUDE_DIRS}
+    ${PNG_INCLUDE_DIRS}
+    ${JPEG_INCLUDE_DIRS}
+    ${OPENSSL_INCLUDE_DIRS}
+    ${WEBP_INCLUDE_DIRS}
+)
 
-# --------------------
+# 设置库目录
+link_directories(
+    ${Boost_LIBRARY_DIRS}
+    ${ZLIB_LIBRARY_DIRS}
+    ${BZIP2_LIBRARY_DIRS}
+    ${PNG_LIBRARY_DIRS}
+    ${JPEG_LIBRARY_DIRS}
+    ${OPENSSL_LIBRARY_DIRS}
+    ${WEBP_LIBRARY_DIRS}
+)
+
+# ------------
 # Global build options
-# --------------------
-if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wextra")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pedantic")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wwrite-strings")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-variable")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-parameter")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wold-style-cast")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14") # for MinGW-w64
-endif()
-
-if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -ffloat-store")
-    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -ggdb")
+# ------------
+if(CMAKE_COMPILER_IS_GNUCXX)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -pedantic -Wwrite-strings -Wno-unused-variable -Wno-unused-parameter -Wold-style-cast -pthread")
     set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -s")
+    set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -ggdb")
 endif()
 
-if(MSVC)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP") # build in parallel
-    add_definitions(-DNOMINMAX)                 # disable retarded macros
-    add_definitions(-D_CRT_SECURE_NO_WARNINGS)  # _wfopen is okay
-    add_definitions(-DWINICONV_CONST=)          # win-iconv issue #25
-endif()
-
-if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -pthread")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14") # for stupid travis
-endif()
-
-add_definitions(-D_FILE_OFFSET_BITS=64) # 64-bit off_t
-
-if(WEBP_FOUND)
-    add_definitions(-DWEBP_FOUND=1)
-else()
-    add_definitions(-DWEBP_FOUND=0)
-endif()
+# 64-bit off_t
+add_definitions(-D_FILE_OFFSET_BITS=64)
 
 # ------------
 # Source files
@@ -94,32 +70,33 @@ endif()
 configure_file("${CMAKE_SOURCE_DIR}/src/version.h.in" "${CMAKE_BINARY_DIR}/generated/version.h" @ONLY)
 include_directories(${CMAKE_BINARY_DIR}/generated)
 
-set(CMAKE_SOURCE_DIR "${CMAKE_BINARY_DIR}/../")
 file(GLOB_RECURSE au_sources "${CMAKE_SOURCE_DIR}/src/*.cc")
 file(GLOB_RECURSE au_headers "${CMAKE_SOURCE_DIR}/src/*.h")
 list(REMOVE_ITEM au_sources "${CMAKE_SOURCE_DIR}/src/main.cc")
 
 option(micro "Micro" OFF)
-function(filter sources)
+function(filter_sources sources)
     foreach(item ${${sources}})
         if(${item} MATCHES "dec/.*/")
             if(NOT ${item} MATCHES "french_bread|/(jpeg|png|bmp|wav)_(audio|image)")
                 list(REMOVE_ITEM ${sources} ${item})
-            endif(NOT ${item} MATCHES "french_bread|/(jpeg|png|bmp|wav)_(audio|image)")
-        endif(${item} MATCHES "dec/.*/")
-    endforeach(item ${${sources}})
+            endif()
+        endif()
+    endforeach()
     set(${sources} ${${sources}} PARENT_SCOPE)
-endfunction(filter)
+endfunction()
+
 if(micro)
     message("Enabling micro build")
-    filter(au_sources)
-    filter(au_headers)
+    filter_sources(au_sources)
+    filter_sources(au_headers)
 endif()
 
+# Platform-specific source exclusions
 if(WIN32)
     list(REMOVE_ITEM au_sources "${CMAKE_SOURCE_DIR}/src/logger_ansi.cc")
     list(REMOVE_ITEM au_sources "${CMAKE_SOURCE_DIR}/src/logger_dummy.cc")
-elseif(CYGWIN OR UNIX)
+elseif(UNIX)
     list(REMOVE_ITEM au_sources "${CMAKE_SOURCE_DIR}/src/logger_win.cc")
     list(REMOVE_ITEM au_sources "${CMAKE_SOURCE_DIR}/src/logger_dummy.cc")
 else()
@@ -149,28 +126,20 @@ group_source_files("${CMAKE_SOURCE_DIR}/src" "${au_sources};${au_headers}")
 # 3rd party libraries
 # -------------------
 
-# Catch
+# Catch2 for testing
 set(CATCH_PATH "${CMAKE_SOURCE_DIR}/tests/test_support/catch.h")
 if(NOT EXISTS "${CATCH_PATH}")
-    message("Downloading Catch...")
+    message("Downloading Catch2...")
     file(DOWNLOAD "https://raw.githubusercontent.com/catchorg/Catch2/master/single_include/catch2/catch.hpp" "${CATCH_PATH}")
 endif()
 
 # -------------------
 # Linking definitions
 # -------------------
-if(CMAKE_COMPILER_IS_GNUCC OR CMAKE_COMPILER_IS_GNUCXX)
-    if(WIN32 OR CYGWIN)
-        set(iconv iconv)
-    else()
-        set(iconv "")
-    endif()
-    if(WIN32)
-        set(unicode "-municode")
-    else()
-        set(unicode "")
-    endif()
-elseif(${CMAKE_SYSTEM_NAME} MATCHES "Darwin")
+if(CMAKE_COMPILER_IS_GNUCXX)
+    set(iconv "")
+    set(unicode "")
+elseif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
     set(iconv iconv)
 else()
     set(iconv ${ICONV_LIBRARY})
@@ -185,7 +154,6 @@ target_link_libraries(arc_unpacker ${unicode} ${iconv} ${Boost_LIBRARIES} ${ZLIB
 if(WEBP_FOUND)
     target_link_libraries(arc_unpacker ${WEBP_LIBRARIES})
 endif()
-
 
 target_include_directories(libau BEFORE PUBLIC "${CMAKE_SOURCE_DIR}/src")
 target_include_directories(libau BEFORE PUBLIC "${CMAKE_BINARY_DIR}/generated")

@@ -17,6 +17,7 @@
 
 #pragma once
 
+#include <vector>
 #include <boost/filesystem/path.hpp>
 #include <memory>
 #include <string>
